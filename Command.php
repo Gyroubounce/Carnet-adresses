@@ -1,117 +1,148 @@
 <?php
-require_once 'ContactManager.php';
+declare(strict_types=1);
 
-class Command {
+/**
+ * Command :
+ * - Centralise la logique des commandes CLI.
+ * - Valide les entrées (messages d'erreur si inconnues ou mal formatées).
+ * - Délègue au ContactManager pour le CRUD.
+ */
+
+require_once __DIR__ . '/ContactManager.php';
+
+class Command
+{
     private ContactManager $manager;
 
-    public function __construct() {
+    public function __construct()
+    {
         $this->manager = new ContactManager();
     }
 
-    public function execute(string $command): void {
+    /**
+     * Exécute une commande saisie.
+     */
+    public function execute(string $input): void
+    {
+        $command = trim($input);
+
         switch ($command) {
-            case "list":
+            case 'list':
                 $this->listContacts();
                 break;
 
-            case "create":
-                $this->createContact();
+            case 'create':
+                $this->createContactInteractive();
                 break;
 
-            case "delete":
-                $this->deleteContact();
+            case 'delete':
+                $this->deleteContactInteractive();
                 break;
 
-            case "modify":
-                $this->modifyContact();
+            case 'modify':
+                $this->modifyContactInteractive();
                 break;
 
-            case "help":
+            case 'help':
                 $this->showHelp();
                 break;
 
-            case "quit":
+            case 'quit':
                 echo "Programme terminé.\n";
-                exit;
+                exit(0);
 
             default:
-                echo "Commande inconnue. Tapez 'help' pour voir les commandes disponibles.\n";
+                echo "Commande inconnue ou mal formatée. Tapez 'help' pour l'aide.\n";
         }
     }
 
-    private function listContacts(): void {
+    private function listContacts(): void
+    {
         $contacts = $this->manager->findAll();
         if (empty($contacts)) {
             echo "Aucun contact trouvé.\n";
+            return;
+        }
+
+        echo "ID | Nom | Email | Téléphone\n";
+        echo "-------------------------------------------\n";
+        foreach ($contacts as $contact) {
+            echo $contact . "\n"; // utilise __toString()
+        }
+    }
+
+    private function createContactInteractive(): void
+    {
+        $name  = trim((string) readline('Nom : '));
+        $email = trim((string) readline('Email : '));
+        $phone = trim((string) readline('Téléphone (optionnel) : '));
+        $phone = $phone !== '' ? $phone : null;
+
+        if ($name === '' || $email === '') {
+            echo "Format incorrect : nom et email sont requis.\n";
+            return;
+        }
+
+        $contact = $this->manager->create($name, $email, $phone);
+        if ($contact instanceof Contact) {
+            echo "Contact créé : {$contact}\n";
         } else {
-            foreach ($contacts as $contact) {
-                echo $contact . "\n";
-            }
+            echo "Impossible de créer le contact (voir logs).\n";
         }
     }
 
-    private function createContact(): void {
-        $name  = readline("Nom : ");
-        $email = readline("Email : ");
-        $phone = readline("Téléphone : ");
+    private function deleteContactInteractive(): void
+    {
+        $idStr = trim((string) readline('ID du contact à supprimer : '));
+        if ($idStr === '' || !ctype_digit($idStr)) {
+            echo "Format incorrect : l'ID doit être un entier positif.\n";
+            return;
+        }
+        $id = (int) $idStr;
 
-        try {
-            $stmt = $this->manager->getPDO()->prepare(
-                "INSERT INTO contact (name, email, phone_number) VALUES (:name, :email, :phone)"
-            );
-            $stmt->execute([
-                'name'  => $name,
-                'email' => $email,
-                'phone' => $phone
-            ]);
-            echo "Contact créé avec succès.\n";
-        } catch (PDOException $e) {
-            error_log("Erreur lors de la création : " . $e->getMessage());
-            echo "Impossible de créer le contact.\n";
+        $ok = $this->manager->delete($id);
+        echo $ok ? "Contact supprimé.\n" : "Aucun contact supprimé (id introuvable).\n";
+    }
+
+    private function modifyContactInteractive(): void
+    {
+        $idStr = trim((string) readline('ID du contact à modifier : '));
+        if ($idStr === '' || !ctype_digit($idStr)) {
+            echo "Format incorrect : l'ID doit être un entier positif.\n";
+            return;
+        }
+        $id = (int) $idStr;
+
+        $existing = $this->manager->findById($id);
+        if (!$existing) {
+            echo "Contact introuvable pour l'id {$id}.\n";
+            return;
+        }
+
+        echo "Valeurs actuelles : {$existing}\n";
+        $name  = trim((string) readline('Nouveau nom (laisser vide pour conserver) : '));
+        $email = trim((string) readline('Nouvel email (laisser vide pour conserver) : '));
+        $phone = trim((string) readline('Nouveau téléphone (laisser vide pour conserver) : '));
+
+        $newName  = $name !== '' ? $name : $existing->getName();
+        $newEmail = $email !== '' ? $email : $existing->getEmail();
+        $newPhone = $phone !== '' ? $phone : $existing->getPhoneNumber();
+
+        $updated = $this->manager->update($id, $newName, $newEmail, $newPhone);
+        if ($updated instanceof Contact) {
+            echo "Contact modifié : {$updated}\n";
+        } else {
+            echo "Impossible de modifier le contact (voir logs).\n";
         }
     }
 
-    private function deleteContact(): void {
-        $id = (int)readline("ID du contact à supprimer : ");
-        try {
-            $stmt = $this->manager->getPDO()->prepare("DELETE FROM contact WHERE id = :id");
-            $stmt->execute(['id' => $id]);
-            echo "Contact supprimé (si existant).\n";
-        } catch (PDOException $e) {
-            error_log("Erreur lors de la suppression : " . $e->getMessage());
-            echo "Impossible de supprimer le contact.\n";
-        }
-    }
-
-    private function modifyContact(): void {
-        $id    = (int)readline("ID du contact à modifier : ");
-        $name  = readline("Nouveau nom : ");
-        $email = readline("Nouvel email : ");
-        $phone = readline("Nouveau téléphone : ");
-
-        try {
-            $stmt = $this->manager->getPDO()->prepare(
-                "UPDATE contact SET name = :name, email = :email, phone_number = :phone WHERE id = :id"
-            );
-            $stmt->execute([
-                'id'    => $id,
-                'name'  => $name,
-                'email' => $email,
-                'phone' => $phone
-            ]);
-            echo "Contact modifié (si existant).\n";
-        } catch (PDOException $e) {
-            error_log("Erreur lors de la modification : " . $e->getMessage());
-            echo "Impossible de modifier le contact.\n";
-        }
-    }
-
-    private function showHelp(): void {
+    private function showHelp(): void
+    {
         echo "Commandes disponibles :\n";
         echo " - list   : afficher tous les contacts\n";
-        echo " - create : ajouter un nouveau contact\n";
-        echo " - delete : supprimer un contact\n";
-        echo " - modify : modifier un contact\n";
+        echo " - create : ajouter un nouveau contact (prompts interactifs)\n";
+        echo " - delete : supprimer un contact (id demandé)\n";
+        echo " - modify : modifier un contact (id + prompts)\n";
         echo " - help   : afficher cette aide\n";
         echo " - quit   : quitter le programme\n";
     }
