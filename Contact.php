@@ -9,7 +9,7 @@ declare(strict_types=1);
  * - __toString pour l'affichage dans le shell.
  */
 
-final class Contact
+class Contact
 {
     private ?int $id;
     private string $name;

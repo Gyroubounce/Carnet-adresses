@@ -11,7 +11,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/DBConnect.php';
 require_once __DIR__ . '/Contact.php';
 
-final class ContactManager
+class ContactManager
 {
     private PDO $pdo;
 
